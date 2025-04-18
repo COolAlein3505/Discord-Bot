@@ -241,21 +241,21 @@ async def create_question(ctx, question: str, option1: str, option2: str, minute
         await ctx.send(f"Error creating question: {str(e)}")
 
 @bot.command()
+@commands.has_role("AD")
 async def resolve(ctx, question_id: int, correct_option: int):
-    # Only allow users with the 'AD' role
-    if not has_ad_role(ctx):
-        await ctx.send("⛔ You don't have permission to use this command. Only users with the 'AD' role can use it.")
-        return
+    """Resolve a prediction market (Admin only)"""
     try:
         async with aiosqlite.connect('market.db') as db:
+            # Get the question
             question = await (await db.execute(
                 "SELECT * FROM questions WHERE question_id = ?", (question_id,)
             )).fetchone()
             if not question:
                 await ctx.send("❌ Invalid question ID.")
                 return
-            if question[9]:  # resolved column
-                await ctx.send("❌ This question has already been resolved.")
+            # question[8] is correct_option, question[9] is resolved
+            if question[8] is not None:
+                await ctx.send("❌ This question has already been resolved with a correct option.")
                 return
             if correct_option not in [1, 2]:
                 await ctx.send("❌ Correct option must be 1 or 2.")
@@ -263,6 +263,7 @@ async def resolve(ctx, question_id: int, correct_option: int):
 
             final_price = question[5] if correct_option == 1 else question[6]
 
+            # Update all users
             users = await (await db.execute("SELECT * FROM users")).fetchall()
             for user in users:
                 shares = json.loads(user[2]) if user[2] else {}
@@ -275,8 +276,9 @@ async def resolve(ctx, question_id: int, correct_option: int):
                         (new_balance, user[0])
                     )
 
+            # Mark question as resolved and set correct option
             await db.execute(
-                "UPDATE questions SET resolved = TRUE, correct_option = ? WHERE question_id = ?",
+                "UPDATE questions SET correct_option = ?, resolved = TRUE WHERE question_id = ?",
                 (correct_option, question_id)
             )
             await db.commit()
@@ -284,6 +286,7 @@ async def resolve(ctx, question_id: int, correct_option: int):
         await ctx.send(f"✅ Market resolved! Option {correct_option} is correct. Winnings have been distributed.")
     except Exception as e:
         await ctx.send(f"❌ Error resolving question: {str(e)}")
+
 
         
 @bot.event
