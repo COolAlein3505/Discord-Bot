@@ -300,7 +300,31 @@ async def on_command_error(ctx, error):
     else:
         # For other errors
         await ctx.send(f"❌ An error occurred: {str(error)}")
-
+        
+@bot.command()
+async def give_coins(ctx, member: discord.Member, amount: float):
+    # Check if the invoker has the 'AD' role
+    if not any(role.name == "AD" for role in ctx.author.roles):
+        await ctx.send("⛔ You don't have permission to use this command. Only users with the 'AD' role can use it.")
+        return
+    if amount <= 0:
+        await ctx.send("❌ Please specify a positive amount of coins to give.")
+        return
+    async with aiosqlite.connect('market.db') as db:
+        # Get the user's current balance
+        user = await (await db.execute(
+            "SELECT * FROM users WHERE user_id = ?", (member.id,)
+        )).fetchone()
+        if not user:
+            balance = 20.0 + amount  # If user doesn't exist, start with 20 + amount
+        else:
+            balance = user[1] + amount
+        await db.execute(
+            "INSERT OR REPLACE INTO users (user_id, balance, shares) VALUES (?, ?, ?)",
+            (member.id, balance, user[2] if user else json.dumps({}))
+        )
+        await db.commit()
+    await ctx.send(f"✅ Gave {amount:.2f} coins to {member.mention}. New balance: {balance:.2f} coins.")
     
 @bot.command()
 async def list_questions(ctx):
