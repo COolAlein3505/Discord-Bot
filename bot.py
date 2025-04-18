@@ -11,6 +11,9 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+def has_ad_role(ctx):
+    return any(role.name == "AD" for role in ctx.author.roles)
+
 # Database initialization
 async def init_db():
     async with aiosqlite.connect('market.db') as db:
@@ -210,15 +213,41 @@ async def help(ctx):
     embed.add_field(name="📝 Examples", value=examples, inline=False)
     
     await ctx.send(embed=embed)
-
+    
+@bot.command()
+async def create_question(ctx, question: str, option1: str, option2: str, minutes: int):
+    # Only allow users with the 'AD' role
+    if not has_ad_role(ctx):
+        await ctx.send("⛔ You don't have permission to use this command. Only users with the 'AD' role can use it.")
+        return
+    try:
+        end_time = datetime.now() + timedelta(minutes=minutes)
+        async with aiosqlite.connect('market.db') as db:
+            await db.execute('''
+                INSERT INTO questions 
+                (channel_id, question_text, option1, option2, end_time)
+                VALUES (?,?,?,?,?)
+            ''', (ctx.channel.id, question, option1, option2, end_time.isoformat()))
+            await db.commit()
+        embed = discord.Embed(
+            title="📊 New Prediction Market",
+            description=f"**{question}**\n\n"
+                        f"1️⃣ {option1}\n2️⃣ {option2}\n"
+                        f"⏳ Closes in {minutes} minutes",
+            color=0x00ff00
+        )
+        await ctx.send(embed=embed)
+    except Exception as e:
+        await ctx.send(f"Error creating question: {str(e)}")
 
 @bot.command()
-@commands.has_permissions(administrator=True)
 async def resolve(ctx, question_id: int, correct_option: int):
-    """Resolve a prediction market (Admin only)"""
+    # Only allow users with the 'AD' role
+    if not has_ad_role(ctx):
+        await ctx.send("⛔ You don't have permission to use this command. Only users with the 'AD' role can use it.")
+        return
     try:
         async with aiosqlite.connect('market.db') as db:
-            # Get the question
             question = await (await db.execute(
                 "SELECT * FROM questions WHERE question_id = ?", (question_id,)
             )).fetchone()
@@ -234,7 +263,6 @@ async def resolve(ctx, question_id: int, correct_option: int):
 
             final_price = question[5] if correct_option == 1 else question[6]
 
-            # Update all users
             users = await (await db.execute("SELECT * FROM users")).fetchall()
             for user in users:
                 shares = json.loads(user[2]) if user[2] else {}
@@ -247,7 +275,6 @@ async def resolve(ctx, question_id: int, correct_option: int):
                         (new_balance, user[0])
                     )
 
-            # Mark question as resolved
             await db.execute(
                 "UPDATE questions SET resolved = TRUE, correct_option = ? WHERE question_id = ?",
                 (correct_option, question_id)
