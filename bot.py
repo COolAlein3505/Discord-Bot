@@ -145,14 +145,88 @@ async def market(ctx, question_id: int):
     embed.set_footer(text=f"Closes at {datetime.fromisoformat(question[7]).strftime('%H:%M')}")
     await ctx.send(embed=embed)
 
+# Add this command handler
+@bot.command()
+async def sell(ctx, question_id: int, option: int, shares: float):
+    """Sell shares in a prediction market"""
+    if option not in [1, 2]:
+        await ctx.send("Invalid option! Use 1 or 2")
+        return
+
+    async with aiosqlite.connect('market.db') as db:
+        async with db.execute("BEGIN TRANSACTION"):
+            # Get question and user data
+            question = await (await db.execute(
+                "SELECT * FROM questions WHERE question_id = ? AND resolved = FALSE",
+                (question_id,)
+            )).fetchone()
+            
+            user = await (await db.execute(
+                "SELECT * FROM users WHERE user_id = ?",
+                (ctx.author.id,)
+            )).fetchone()
+
+            if not question:
+                await ctx.send("Invalid or expired question ID!")
+                return
+
+            if not user or not user[2]:
+                await ctx.send("You don't own any shares in this question!")
+                return
+
+            shares_data = json.loads(user[2])
+            holdings = shares_data.get(str(question_id), {}).get(str(option), 0)
+            
+            if shares > holdings:
+                await ctx.send(f"You only have {holdings} shares to sell!")
+                return
+
+            # Calculate proceeds
+            price = question[5 if option == 1 else 6]
+            total_proceeds = shares * price
+
+            # Update price
+            new_price = update_price(price, -shares)  # Negative quantity for selling
+            await db.execute(f'''
+                UPDATE questions 
+                SET option{option}_price = ?
+                WHERE question_id = ?
+            ''', (new_price, question_id))
+
+            # Update user balance and shares
+            new_balance = user[1] + total_proceeds
+            shares_data[str(question_id)][str(option)] -= shares
+            
+            # Cleanup empty holdings
+            if shares_data[str(question_id)][str(option)] <= 0:
+                del shares_data[str(question_id)][str(option)]
+            if not shares_data[str(question_id)]:
+                del shares_data[str(question_id)]
+            
+            await db.execute('''
+                UPDATE users 
+                SET balance = ?, shares = ?
+                WHERE user_id = ?
+            ''', (new_balance, json.dumps(shares_data), ctx.author.id))
+            
+            await db.commit()
+
+    await ctx.send(f"✅ Sold {shares} shares of Option {option} at {price:.2f} each!")
+
+# Update the balance command
 @bot.command()
 async def balance(ctx):
-    """Check your balance and portfolio"""
+    """Check your balance, holdings, and prediction stats"""
     async with aiosqlite.connect('market.db') as db:
         user = await (await db.execute(
             "SELECT * FROM users WHERE user_id = ?",
             (ctx.author.id,)
         )).fetchone()
+
+        # Get all resolved questions
+        resolved_questions = await (await db.execute(
+            "SELECT question_id, correct_option FROM questions WHERE resolved = TRUE"
+        )).fetchall()
 
     if not user:
         balance = 20.0
@@ -161,11 +235,27 @@ async def balance(ctx):
         balance = user[1]
         shares = json.loads(user[2]) if user[2] else {}
 
+    # Calculate prediction stats
+    correct = 0
+    wrong = 0
+    total_attempted = 0
+    
+    for qid, correct_option in resolved_questions:
+        qid_str = str(qid)
+        if qid_str in shares:
+            user_options = shares[qid_str]
+            for opt in user_options:
+                total_attempted += 1
+                if int(opt) == correct_option:
+                    correct += 1
+                else:
+                    wrong += 1
+
     embed = discord.Embed(
         title=f"{ctx.author.display_name}'s Portfolio",
         color=0x7289da
     )
-    embed.add_field(name="💰 Balance", value=f"{balance:.2f} coins")
+    embed.add_field(name="💰 Balance", value=f"{balance:.2f} coins", inline=False)
     
     if shares:
         portfolio = "\n".join(
@@ -173,6 +263,13 @@ async def balance(ctx):
             for qid, opts in shares.items()
         )
         embed.add_field(name="📈 Holdings", value=portfolio, inline=False)
+    
+    stats = [
+        f"✅ Correct Predictions: {correct}",
+        f"❌ Wrong Predictions: {wrong}",
+        f"📊 Total Attempted: {total_attempted}"
+    ]
+    embed.add_field(name="📊 Prediction Stats", value="\n".join(stats), inline=False)
     
     await ctx.send(embed=embed)
     
