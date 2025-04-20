@@ -331,17 +331,49 @@ async def market(ctx, question_id: int):
         )).fetchone()
 
     if not question:
-        await ctx.send("Invalid question ID!")
+        await ctx.send("❌ Invalid question ID!")
         return
 
+    # Extract info for clarity
+    qid = question[0]
+    qtext = question[2]
+    option1 = question[3]
+    option2 = question[4]
+    price1 = question[5]
+    price2 = question[6]
+    end_time = datetime.fromisoformat(question[7])
+    resolved = question[9]
+    correct_option = question[8]
+
+    status = "🟢 **Active**" if not resolved else "🔒 **Closed**"
+    result = ""
+    if resolved and correct_option:
+        result = f"\n\n🏆 **Result:** Option {correct_option} was correct!"
+
     embed = discord.Embed(
-        title=question[2],
-        description=f"Market ID: {question[0]}",
-        color=0x00ff00
+        title=f"📊 Prediction Market #{qid}",
+        description=f"**{qtext}**\n\nMarket Status: {status}{result}",
+        color=0x00ff00 if not resolved else 0xff5555
     )
-    embed.add_field(name=f"🟢 {question[3]}", value=f"Price: {question[5]:.2f}")
-    embed.add_field(name=f"🔴 {question[4]}", value=f"Price: {question[6]:.2f}")
-    embed.set_footer(text=f"Closes at {datetime.fromisoformat(question[7]).strftime('%H:%M')}")
+    embed.add_field(
+        name=f"🟩 Option 1: {option1}",
+        value=f"💸 **Price:** {price1:.2f} coins",
+        inline=True
+    )
+    embed.add_field(
+        name=f"🟥 Option 2: {option2}",
+        value=f"💸 **Price:** {price2:.2f} coins",
+        inline=True
+    )
+    embed.add_field(
+        name="⏰ Closes At",
+        value=end_time.strftime("%Y-%m-%d %H:%M"),
+        inline=False
+    )
+    embed.set_footer(text="Use !buy <question_id> <option_number> <shares> to participate!")
+
+    await ctx.send(embed=embed)
+
     await ctx.send(embed=embed)
 
 # Add this command handler
@@ -456,106 +488,139 @@ async def balance(ctx):
                             correct += 1
                         else:
                             wrong += 1
-    
-    # Determine user's role
-    role_name = "Newbie"
-    next_threshold = 2
-    if correct >= 200:
-        role_name = "Grandmaster"
-        next_threshold = None
-    elif correct >= 150:
-        role_name = "International Master"
-        next_threshold = 200
-    elif correct >= 100:
-        role_name = "Master"
-        next_threshold = 150
-    elif correct >= 50:
-        role_name = "Candidate Master"
-        next_threshold = 100
-    elif correct >= 20:
-        role_name = "Expert"
-        next_threshold = 50
-    elif correct >= 5:
-        role_name = "Specialist"
-        next_threshold = 20
-    elif correct >= 2:
-        role_name = "Pupil"
-        next_threshold = 5
-        
-    # After you have correct_count
+
+    # Determine user's role and next threshold
     current_tier = None
+    next_threshold = None
     for tier in reversed(ROLE_TIERS):
         if correct >= tier["threshold"]:
             current_tier = tier
             break
-
+    if current_tier:
+        idx = ROLE_TIERS.index(current_tier)
+        if idx + 1 < len(ROLE_TIERS):
+            next_threshold = ROLE_TIERS[idx + 1]["threshold"]
     role_name = current_tier["name"] if current_tier else "Newbie"
-    # Create embed
+    role_color = current_tier["color"] if current_tier and "color" in current_tier else 0x7289da
+
+    # Create the embed
     embed = discord.Embed(
-        title=f"{ctx.author.display_name}'s Portfolio",
-        color=0x7289da
+        title=f"💼 {ctx.author.display_name}'s Prediction Portfolio",
+        color=role_color
     )
-    embed.add_field(name="💰 Balance", value=f"{balance:.2f} coins", inline=False)
-    
+    embed.add_field(
+        name="💰 **Balance**",
+        value=f"**{balance:.2f} coins**",
+        inline=False
+    )
+
+    # Holdings section
     if shares:
-        portfolio = "\n".join(
-            f"Market {qid}: {', '.join(f'{opt}×{amt}' for opt, amt in opts.items())}"
-            for qid, opts in shares.items()
+        portfolio_lines = []
+        for qid, opts in shares.items():
+            opt_str = " | ".join(f"Option {opt}: **{amt}**" for opt, amt in opts.items())
+            portfolio_lines.append(f"• **Market {qid}**: {opt_str}")
+        embed.add_field(
+            name="📈 **Your Holdings**",
+            value="\n".join(portfolio_lines),
+            inline=False
         )
-        embed.add_field(name="📈 Holdings", value=portfolio, inline=False)
-    
-    stats = [
-        f"✅ Correct Predictions: {correct}",
-        f"❌ Wrong Predictions: {wrong}",
-        f"📊 Total Attempted: {total_attempted}"
-    ]
-    embed.add_field(name="📊 Prediction Stats", value="\n".join(stats), inline=False)
-    
-    # Add rank information
-    rank_info = f"**Current Rank:** {role_name}"
+    else:
+        embed.add_field(
+            name="📈 **Your Holdings**",
+            value="You don't own any shares yet. Use `!buy` to start predicting!",
+            inline=False
+        )
+
+    # Stats section
+    stats = (
+        f"✅ **Correct:** {correct}\n"
+        f"❌ **Wrong:** {wrong}\n"
+        f"📊 **Total Attempted:** {total_attempted}"
+    )
+    embed.add_field(
+        name="📊 **Prediction Stats**",
+        value=stats,
+        inline=False
+    )
+
+    # Rank section
+    rank_info = f"🏅 **Current Rank:** `{role_name}`"
     if next_threshold:
-        rank_info += f"\n*Next rank at {next_threshold} correct predictions*"
-    embed.add_field(name="🏆 Rank", value=rank_info, inline=False)
-    
+        rank_info += f"\n🔜 *Next rank at* **{next_threshold}** *correct predictions*"
+    else:
+        rank_info += "\n🏆 *You are at the highest rank!*"
+    embed.add_field(
+        name="🏆 **Rank Progression**",
+        value=rank_info,
+        inline=False
+    )
+
+    embed.set_footer(text="Keep predicting to climb the ranks! Use !check_rank to update your role.")
     await ctx.send(embed=embed)
     
 bot.remove_command('help')
     
 @bot.command()
 async def help(ctx):
-    """Show available commands"""
+    """Show available commands, ranking system, and examples"""
     embed = discord.Embed(
-        title="Prediction Market Bot Commands",
-        description="List of available commands:",
-        color=0x7289da
+        title="✨ Prediction Market Bot Help ✨",
+        description="Welcome to the Prediction Market! Place bets, climb the ranks, and become a Grandmaster! 🏆",
+        color=0x00ffcc
     )
-    
+
     # Admin commands
     admin_cmds = (
-        "`!create_question \"Question?\" \"Option1\" \"Option2\" <minutes>` - Create a new prediction market\n"
-        "`!resolve <question_id> <correct_option>` - Resolve a market"
+        "🔹 `!create_question \"Question?\" \"Option1\" \"Option2\" <minutes>`\n"
+        "  Create a new prediction market (Admin only)\n"
+        "🔹 `!resolve <question_id> <correct_option>`\n"
+        "  Resolve a market and distribute winnings (Admin only)"
     )
     embed.add_field(name="👑 Admin Commands", value=admin_cmds, inline=False)
-    
-    # User commands
+
+    # User commands (all available)
     user_cmds = (
-        "`!list_questions` - List all active questions\n"
-        "`!market <question_id>` - View details of a question\n"
-        "`!buy <question_id> <option_number> <shares>` - Buy shares in a question\n"
-        "`!balance` - Show your coin balance and holdings"
+        "🔹 `!list_questions` — **See all open prediction questions**\n"
+        "🔹 `!market <question_id>` — View details of a specific question\n"
+        "🔹 `!buy <question_id> <option_number> <shares>` — Buy shares in a question\n"
+        "🔹 `!sell <question_id> <option_number> <shares>` — Sell your shares in a question\n"
+        "🔹 `!balance` — Show your coin balance, holdings, and stats\n"
+        "🔹 `!check_rank` — See your current rank and force a role update"
     )
-    embed.add_field(name="👤 User Commands", value=user_cmds, inline=False)
-    
+    embed.add_field(name="🧑‍💼 User Commands", value=user_cmds, inline=False)
+
+    # Ranking system
+    ranking = (
+        "🏅 **Ranking System:**\n"
+        "• 🕹️ **Newbie** *(0+ correct)* — Grey\n"
+        "• 🟩 **Pupil** *(2+ correct)* — Green\n"
+        "• 🟦 **Specialist** *(5+ correct)* — Light Blue\n"
+        "• 🔵 **Expert** *(20+ correct)* — Dark Blue\n"
+        "• 🟣 **Candidate Master** *(50+ correct)* — Purple\n"
+        "• 🟡 **Master** *(100+ correct)* — Gold/Yellow\n"
+        "• 🟧 **International Master** *(150+ correct)* — Orange/Yellow\n"
+        "• 🟥 **Grandmaster** *(200+ correct)* — Red\n\n"
+        "⭐ Your rank upgrades automatically as you get more predictions correct!\n"
+        "⭐ Use `!check_rank` anytime to see your rank or force an update."
+    )
+    embed.add_field(name="🏆 Ranking System", value=ranking, inline=False)
+
     # Examples
     examples = (
-        "**Examples:**\n"
-        "- `!create_question \"Will CSK win today?\" \"Yes\" \"No\" 60`\n"
-        "- `!buy 1 1 5` (Buy 5 shares of option 1 for question 1)\n"
-        "- `!resolve 1 2` (Declare option 2 as correct for question 1)"
+        "**Quick Examples:**\n"
+        "• `!create_question \"Will CSK win today?\" \"Yes\" \"No\" 60`\n"
+        "• `!list_questions` (See all open questions)\n"
+        "• `!buy 1 1 5` (Buy 5 shares of option 1 for question 1)\n"
+        "• `!sell 1 2 3` (Sell 3 shares of option 2 for question 1)\n"
+        "• `!resolve 1 2` (Declare option 2 as correct for question 1)\n"
+        "• `!check_rank` (See or update your rank)"
     )
     embed.add_field(name="📝 Examples", value=examples, inline=False)
-    
+
+    embed.set_footer(text="Good luck! May the odds be ever in your favor. 🎲")
     await ctx.send(embed=embed)
+
     
 @bot.command()
 async def create_question(ctx, question: str, option1: str, option2: str, minutes: int):
@@ -735,26 +800,32 @@ async def list_questions(ctx):
         rows = await cursor.fetchall()
     
     if not rows:
-        await ctx.send("There are no active questions right now.")
+        await ctx.send("🟡 There are no active prediction questions right now. Use `!create_question` to start one!")
         return
 
     embed = discord.Embed(
-        title="🟢 Active Prediction Markets",
-        color=0x00ff00
+        title="🟢 **Active Prediction Markets**",
+        description="Place your bets! Use `!market <question_id>` to see prices and details.",
+        color=0x00ff99
     )
     for qid, qtext, opt1, opt2, end_time in rows:
-        remaining = datetime.fromisoformat(end_time) - datetime.now()
-        hours, remainder = divmod(remaining.seconds, 3600)
-        minutes, _ = divmod(remainder, 60)
-        time_left = f"{hours}h {minutes}m remaining" if remaining.total_seconds() > 0 else "Closing soon"
+        dt_end = datetime.fromisoformat(end_time)
+        remaining = dt_end - datetime.now()
+        total_seconds = int(remaining.total_seconds())
+        if total_seconds > 0:
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+            time_left = f"⏰ `{hours}h {minutes}m` remaining"
+        else:
+            time_left = "⏰ Closing soon"
         
         embed.add_field(
-            name=f"ID: {qid} | {time_left}",
-            value=f"**{qtext}**\n1️⃣ {opt1} | 2️⃣ {opt2}",
+            name=f"❓ **Q{qid}: {qtext}**",
+            value=f"1️⃣ **{opt1}**  |  2️⃣ **{opt2}**\n{time_left}",
             inline=False
         )
+    embed.set_footer(text="Use !buy <question_id> <option_number> <shares> to participate!")
     await ctx.send(embed=embed)
-
 
 
 # Price calculation function
@@ -771,7 +842,8 @@ async def on_ready():
 # Run the bot
 async def main():
     await init_db()
-    await bot.start('MTM2Mjc3ODIxMjUyNTkzMjY5NA.GHOJ_2.J1b9itnnEL5JfS-y9f9B-VF4RYnycAgrWYPkeo')  # Replace with your actual token
+    await bot.start('MTM2Mjc3ODIxMjUyNTkzMjY5NA.GNMAYE.tHpMM0QdchSD2mdFVISmTW5Uxvu9wZGJEnbVH8')  # Replace with your actual token
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
