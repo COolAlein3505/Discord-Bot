@@ -66,7 +66,6 @@ Market prices are driven by both **real-time data** and **supply & demand**. The
 - **Discord Bot:** `discord.py`  
 - **Live Data:** Cricket API (ball-by-ball + win probabilities)  
 - **Persistence:** CSV-based logging for trades and balances  
-- **Deployment:** Docker on AWS / VM
 
 ---
 
@@ -74,7 +73,6 @@ Market prices are driven by both **real-time data** and **supply & demand**. The
 
 - Python 3.8 or higher  
 - A valid Discord bot token  
-- Cricket API key (for live match data)
 
 ---
 
@@ -84,21 +82,18 @@ Follow the steps below to set up and run the bot:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/your-repo-name.git
-cd your-repo-name
+git clone https://github.com/COolAlein3505/Discord-Bot
+cd Discord-Bot
 
 # 2. Create & activate a virtual environment
 python -m venv venv
 source venv/bin/activate   # On Windows: venv\Scripts\activate
 
-# 3. Install the dependencies
-pip install -r requirements.txt
-
-# 4. Configure environment variables
+# 3. Configure environment variables
 cp .env.example .env
 # Open the .env file and add your tokens
 # DISCORD_TOKEN=your_bot_token
 # CRICKET_API_KEY=your_api_key
 
-# 5. Start the bot
+# 4. Start the bot
 python bot.py
