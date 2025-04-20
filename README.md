@@ -18,13 +18,13 @@
 
 ---
 
-<h1 align="center">🏏 <PROJECT_NAME><br>by <TEAM_NAME></h1>
+<h1 align="center"> 🚀 SatteBaaz 🚀 <br> by COolAlien </h1>
 
 ---
 
 ### 🚀 Overview
 
-**<PROJECT_NAME>** is a Discord-based prediction-market arcade for live IPL matches.  
+**SatteBaaz** is a Discord-based prediction-market arcade for live IPL matches.  
 Users wager virtual points on simple yes/no questions (e.g., *“Will Team X score ≥ Y runs in the next over?”*) by buying & selling shares.
 
 Market prices are driven by both **real-time data** and **supply & demand**. The experience is fully integrated into Discord, creating a fun and competitive environment for cricket fans.
